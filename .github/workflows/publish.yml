@@ -59,7 +59,8 @@ jobs:
     - name: macos-latest
       if: matrix.platform == 'macos-latest'
       uses: actions/checkout@v3
-    - run: cargo bulid --release --target=aarch64-apple-darwin
+      with:
+        run: cargo build --release --target=aarch64-apple-darwin
 
     - name: Upload exe file
       uses: actions/upload-artifact@v3
