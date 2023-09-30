@@ -1,10 +1,9 @@
 use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{Embedding, Module, VarBuilder, Dropout};
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-pub const MAX_SEQ_LEN: usize = 4096;
+pub const MAX_SEQ_LEN: usize = 8192;
 
 pub struct Config {
     pub vocab_size: usize,
@@ -35,7 +34,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn config_7b_v1_1(use_flash_attn: bool) -> Self {
+    pub fn config_7b_v1_1(_use_flash_attn: bool) -> Self {
         Self {
             vocab_size: 151936,
             hidden_size: 4096,
@@ -69,7 +68,7 @@ impl Config {
 
 #[derive(Clone)]
 pub struct Cache {
-    masks: Arc<Mutex<HashMap<usize, Tensor>>>,
+    masks: Arc<Mutex<HashMap<(usize, usize), Tensor>>>,
     pub use_kv_cache: bool,
     #[allow(clippy::type_complexity)]
     kvs: Arc<Mutex<Vec<Option<(Tensor, Tensor)>>>>,
@@ -106,16 +105,16 @@ impl Cache {
         })
     }
 
-    fn mask(&self, t: usize) -> Result<Tensor> {
+    fn mask(&self, t1: usize, t2: usize) -> Result<Tensor> {
         let mut masks = self.masks.lock().unwrap();
-        if let Some(mask) = masks.get(&t) {
+        if let Some(mask) = masks.get(&(t1, t2)) {
             Ok(mask.clone())
         } else {
-            let mask: Vec<_> = (0..t)
-                .flat_map(|i| (0..t).map(move |j| u8::from(j > i)))
+            let mask: Vec<_> = (0..t1)
+                .flat_map(|i| (0..t2).map(move |j| u8::from(j > i + (t2 - t1))))
                 .collect();
-            let mask = Tensor::from_slice(&mask, (t, t), &self.device)?;
-            masks.insert(t, mask.clone());
+            let mask = Tensor::from_slice(&mask, (t1, t2), &self.device)?;
+            masks.insert((t1, t2), mask.clone());
             Ok(mask)
         }
     }
@@ -265,7 +264,7 @@ impl CausalSelfAttention {
             let k = k.to_dtype(DType::F32)?;
             let v = v.to_dtype(DType::F32)?;
             let att = (q.matmul(&k.t()?)? / (self.head_dim as f64).sqrt())?;
-            let mask = self.cache.mask(seq_len)?.broadcast_as(att.shape())?;
+            let mask = self.cache.mask(seq_len, *att.shape().dims().get(3).unwrap())?.broadcast_as(att.shape())?;
             let att = masked_fill(&att, &mask, f32::NEG_INFINITY)?;
             let att = candle_nn::ops::softmax(&att, D::Minus1)?;
             // Convert to contiguous as matmul doesn't support strided vs for now.
