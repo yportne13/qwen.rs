@@ -56,6 +56,11 @@ jobs:
     - name: Build
       run: cargo build --release
 
+    - name: macos-latest
+      if: matrix.platform == 'macos-latest'
+      uses: actions/checkout@v3
+    - run: cargo bulid --release --target=aarch64-apple-darwin
+
     - name: Upload exe file
       uses: actions/upload-artifact@v3
       with:
@@ -63,6 +68,7 @@ jobs:
         path: |
           target\release\*.exe
           target/release/qwen-rs
+          target/aarch64-apple-darwin/release/qwen-rs
 
     - name: Upload release assets windows
       if: matrix.platform == 'windows-latest'
@@ -95,4 +101,15 @@ jobs:
         upload_url: ${{ needs.release.outputs.upload_url }}
         asset_path: target/release/qwen-rs
         asset_name: qwen-rs_mac
+        asset_content_type: application/octet-stream
+
+    - name: Upload release assets mac_aarch64
+      if: matrix.platform == 'macos-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target/aarch64-apple-darwin/release/qwen-rs
+        asset_name: qwen-rs_mac_aarch64
         asset_content_type: application/octet-stream
