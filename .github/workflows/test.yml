@@ -28,4 +28,4 @@ jobs:
         name: qwen-rs
         path: |
           target\release\*.exe
-          target\release\qwen-rs
+          target/release/qwen-rs
