@@ -75,48 +75,37 @@ fn masked_fill(on_false: &Tensor, mask: &Tensor, on_true: f32) -> Result<Tensor>
 impl LayerWeights {
     fn apply_rotary_emb(&self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
         let _enter = self.span_rot.enter();
-        let (b_sz, n_head, seq_len, n_embd) = x.dims4()?;
-        let cos = self
-            .cos
-            .narrow(0, index_pos, seq_len)?
-            .reshape((seq_len, n_embd / 2, 1))?;
-        let sin = self
-            .sin
-            .narrow(0, index_pos, seq_len)?
-            .reshape((seq_len, n_embd / 2, 1))?;
-        let cos = cos.broadcast_as((b_sz, 1, seq_len, n_embd / 2, 1))?;
-        let sin = sin.broadcast_as((b_sz, 1, seq_len, n_embd / 2, 1))?;
-        // This mimics the llama.cpp behavior.
-        // https://github.com/ggerganov/llama.cpp/blob/1f0bccb27929e261744c979bc75114955da49e98/ggml.c#L12104-L12105
-        // The x0 and x1 value are interleaved on the n_embd (= head_dim) dimension.
-        // The resulting y0 and y1 are also interleaved with:
-        //   y0 = x0*cos - x1*sin
-        //   y1 = x0*sin + x1*cos
-        let x = x.reshape((b_sz, n_head, seq_len, n_embd / 2, 2))?;
-        let x0 = x.narrow(D::Minus1, 0, 1)?;
-        let x1 = x.narrow(D::Minus1, 1, 1)?;
-        let y0 = (x0.broadcast_mul(&cos)? - x1.broadcast_mul(&sin)?)?;
-        let y1 = (x0.broadcast_mul(&sin)? + x1.broadcast_mul(&cos)?)?;
-        let rope = Tensor::cat(&[y0, y1], D::Minus1)?;
-        let rope = rope.flatten_from(D::Minus2)?;
+        let (b_sz, _, seq_len, hidden_size) = x.dims4()?;
+        let cos = self.cos.narrow(0, index_pos, seq_len)?;
+        let sin = self.sin.narrow(0, index_pos, seq_len)?;
+        let cos = cos.broadcast_as((b_sz, 1, seq_len, hidden_size))?;
+        let sin = sin.broadcast_as((b_sz, 1, seq_len, hidden_size))?;
+        let x1 = x.narrow(D::Minus1, 0, hidden_size / 2)?;
+        let x2 = x.narrow(D::Minus1, hidden_size / 2, hidden_size / 2)?;
+        let rotate_x = Tensor::cat(&[&x2.neg()?, &x1], D::Minus1)?;
+        let rope = (x.broadcast_mul(&cos)? + rotate_x.broadcast_mul(&sin)?)?;
         Ok(rope)
     }
 
     fn forward_attn(&mut self, x: &Tensor, mask: &Tensor, index_pos: usize) -> Result<Tensor> {
         let _enter = self.span_attn.enter();
         let (b_sz, seq_len, n_embd) = x.dims3()?;
-        let mixed_x_layer = (self.c_attn.forward(x)?).add(&self.c_attn_bias)?;
+        let mixed_x_layer = (self.c_attn.forward(x)?).broadcast_add(&self.c_attn_bias)?;
         let qkv = mixed_x_layer.chunk(3, 2)?;
 
+        let in_dtype = qkv[0].dtype();
         let q = qkv[0]
             .reshape((b_sz, seq_len, self.n_head, self.head_dim))?
-            .transpose(1, 2)?;
+            .transpose(1, 2)?
+            .to_dtype(DType::F32)?;
         let k = qkv[1]
             .reshape((b_sz, seq_len, self.n_kv_head, self.head_dim))?
-            .transpose(1, 2)?;
+            .transpose(1, 2)?
+            .to_dtype(DType::F32)?;
         let v = qkv[2]
             .reshape((b_sz, seq_len, self.n_kv_head, self.head_dim))?
-            .transpose(1, 2)?;
+            .transpose(1, 2)?
+            .to_dtype(DType::F32)?;
 
         let q = self.apply_rotary_emb(&q, index_pos)?;
         let k = self.apply_rotary_emb(&k, index_pos)?;
@@ -144,7 +133,7 @@ impl LayerWeights {
         let att = masked_fill(&att, &mask, f32::NEG_INFINITY)?;
         let att = candle_nn::ops::softmax_last_dim(&att)?;
         // Convert to contiguous as matmul doesn't support strided vs for now.
-        let y = att.matmul(&v.contiguous()?)?;
+        let y = att.matmul(&v.contiguous()?)?.to_dtype(in_dtype)?;
         let y = y.transpose(1, 2)?.reshape(&[b_sz, seq_len, n_embd])?;
         let y = self.c_attn_proj.forward(&y)?;
         Ok(y)
@@ -170,7 +159,7 @@ pub struct ModelWeights {
     layers: Vec<LayerWeights>,
     ln_f: RmsNorm,
     lm_head: QMatMul,
-    masks: HashMap<usize, Tensor>,
+    masks: HashMap<(usize, usize), Tensor>,
     span: tracing::Span,
     span_output: tracing::Span,
 }
@@ -185,6 +174,7 @@ fn precomput_freqs_cis(head_dim: usize, freq_base: f32) -> Result<(Tensor, Tenso
         .to_dtype(DType::F32)?
         .reshape((MAX_SEQ_LEN, 1))?
         .matmul(&theta.reshape((1, theta.elem_count()))?)?;
+    let idx_theta = Tensor::cat(&[&idx_theta, &idx_theta], D::Minus1)?;
     let cos = idx_theta.cos()?;
     let sin = idx_theta.sin()?;
     Ok((cos, sin))
@@ -325,22 +315,22 @@ impl ModelWeights {
         })
     }
 
-    fn mask(&mut self, t: usize) -> Result<Tensor> {
-        if let Some(mask) = self.masks.get(&t) {
+    fn mask(&mut self, t1: usize, t2: usize) -> Result<Tensor> {
+        if let Some(mask) = self.masks.get(&(t1, t2)) {
             Ok(mask.clone())
         } else {
-            let mask: Vec<_> = (0..t)
-                .flat_map(|i| (0..t).map(move |j| u8::from(j > i)))
+            let mask: Vec<_> = (0..t1)
+                .flat_map(|i| (0..t2).map(move |j| u8::from(j > i + (t2 - t1))))
                 .collect();
-            let mask = Tensor::from_slice(&mask, (t, t), &Device::Cpu)?;
-            self.masks.insert(t, mask.clone());
+            let mask = Tensor::from_slice(&mask, (t1, t2), &Device::Cpu)?;
+            self.masks.insert((t1, t2), mask.clone());
             Ok(mask)
         }
     }
 
     pub fn forward(&mut self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
         let (_b_sz, seq_len) = x.dims2()?;
-        let mask = self.mask(seq_len)?;
+        let mask = self.mask(seq_len, seq_len + index_pos)?;
         let _enter = self.span.enter();
         let mut layer_in = self.wte.forward(x)?;
         for layer in self.layers.iter_mut() {

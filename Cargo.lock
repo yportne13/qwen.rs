@@ -1532,6 +1532,7 @@ dependencies = [
  "candle-datasets",
  "candle-nn",
  "candle-transformers",
+ "half",
  "serde",
  "serde_json",
  "tiktoken-rs",
