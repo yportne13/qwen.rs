@@ -57,9 +57,33 @@ fn main() -> Result<(), Error> {
         file.write_all(&u32_to_array_of_u8(2))?;//dims
         file.write_all(&u32_to_array_of_u8(name.len() as u32))?;//num_len
         file.write_all(&[1, 0, 0, 0])?;//dtype F16
+        //file.write_all(&[2, 0, 0, 0])?;//dtype q4_0
+        //file.write_all(&[6, 0, 0, 0])?;//dtype q5_0
+        //file.write_all(&[8, 0, 0, 0])?;//dtype q8_0
         file.write_all(&u32_to_array_of_u8(size.1))?;
         file.write_all(&u32_to_array_of_u8(size.0))?;
         file.write_all(name.as_bytes())?;
+        /*let tensor = vb.get((size.0 as usize, size.1 as usize), name)?
+            .to_dtype(candle_core::DType::F16)?;//: Vec<Vec<half::f16>>
+            //.to_vec2()?;
+        use candle_core::quantized::GgmlType;
+        type T = candle_core::quantized::k_quants::BlockQ5_0;
+        let src = tensor
+            .to_dtype(candle_core::DType::F32)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
+        let mut data = vec![T::zeros(); src.len() / T::BLCK_SIZE];
+        T::from_float(&src, &mut data)?;
+        unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+            ::core::slice::from_raw_parts(
+                (p as *const T) as *const u8,
+                ::core::mem::size_of::<T>(),
+            )
+        }
+        let to_write = data.into_iter()
+            .flat_map(|x| unsafe{any_as_u8_slice(&x)}.to_vec())
+            .collect::<Vec<_>>();
+        file.write_all(&to_write)?;*/
         let tensor: Vec<Vec<half::f16>> = vb.get((size.0 as usize, size.1 as usize), name)?
             .to_dtype(candle_core::DType::F16)?
             .to_vec2()?;

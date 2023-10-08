@@ -41,7 +41,7 @@ You are a helpful assistant.<|im_end|>
     ).into_iter().map(|x| x as u32).collect::<Vec<_>>();
 
     let device = candle_core::Device::Cpu;
-    let mut logits_processor = LogitsProcessor::new(0, Some(1.0), Some(0.5));
+    let mut logits_processor = LogitsProcessor::new(0, Some(0.0), Some(0.5));
 
     //////////////////
     let mut index_pos = 0;
@@ -81,7 +81,7 @@ You are a helpful assistant.<|im_end|>
 }
 
 fn main() -> Result<(), Error> {
-    println!("想跑非量化版还是量化版？输入 0 选择非量化版，输入 1 选择量化版");
+    println!("想跑非量化版还是量化版？输入 0 选择非量化版，输入 2 选择 ggml 量化版");
     let stdin = std::io::stdin();
     let mut buf = String::new();
     let _ = stdin.read_line(&mut buf)?;
@@ -112,57 +112,65 @@ fn main() -> Result<(), Error> {
             .collect::<Result<Vec<_>, Error>>()?;
 
         let device = candle_core::Device::Cpu;
-        let config = Config::config_7b_v1_1(false);
+        let config = Config::config_7b_v1_1(false, false);
+        let vb = VarBuilder::from_safetensors(tensors, candle_core::DType::F16, &device);
+        let cache = qwen::model::Cache::new(true, candle_core::DType::F16, &config, &device)?;
+        let mut qwen = Qwen::load(vb, &cache, &config)?;
+        chat(&mut qwen)?;
+    } else if buf.strip_prefix('1').is_some() {
+        //println!("准备运行量化版本");
+        println!("这是一个尚未完成的 auto-gptq 量化版本");
+        println!("如果你还没有权重文件，前往 huggingface 或 modelscope 下载那 3 个后缀是 \".safetensors\"");
+        println!("huggingface: https://huggingface.co/Qwen/Qwen-7B-Chat/tree/main");
+        println!("modelscope: https://modelscope.cn/models/qwen/Qwen-7B-Chat/files");
+        println!("在当前目录下创建名叫 weight 的文件夹，然后把这八个文件放进去即可");
+        println!("准备加载模型");
+        let filenames = vec![
+            std::path::PathBuf::from_str("weight/model-00001-of-00003.safetensors").unwrap(),
+            std::path::PathBuf::from_str("weight/model-00002-of-00003.safetensors").unwrap(),
+            std::path::PathBuf::from_str("weight/model-00003-of-00003.safetensors").unwrap(),
+        ];
+        let handles = filenames
+            .iter()
+            .map(|f| Ok(unsafe { candle_core::safetensors::MmapedFile::new(f.as_path())? }))
+            .collect::<Result<Vec<_>, Error>>()?;
+        let tensors: Vec<_> = handles
+            .iter()
+            .map(|h| Ok(h.deserialize()?))
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let device = candle_core::Device::Cpu;
+        let config = Config::config_7b_v1_1(false, true);
         let vb = VarBuilder::from_safetensors(tensors, candle_core::DType::F16, &device);
         let cache = qwen::model::Cache::new(true, candle_core::DType::F16, &config, &device)?;
         let mut qwen = Qwen::load(vb, &cache, &config)?;
         chat(&mut qwen)?;
     } else {
-        println!("准备运行量化版本");
+        println!("准备运行 ggml 量化版本");
+        println!("选择量化位宽");
+        println!("1: F16，请确认你有如下文件：weight/qwen7b-ggml-f16.bin");
+        println!("2: Q4_0，请确认你有如下文件：weight/qwen7b-ggml-q4_0.bin");
+        println!("6: Q5_0，请确认你有如下文件：weight/qwen7b-ggml-q5_0.bin");
+        println!("8: Q8_0，请确认你有如下文件：weight/qwen7b-ggml-q8_0.bin");
+        let stdin = std::io::stdin();
+        let mut buf = String::new();
+        let _ = stdin.read_line(&mut buf)?;
         let mut qwen = {
-            let mut file = std::fs::File::open("weight/qwen7b-ggml-q4_0.bin")?;
-            //let mut file = std::fs::File::open("weight/temp.bin")?;
+            let mut file = if buf.strip_prefix('1').is_some() {
+                std::fs::File::open("weight/qwen7b-ggml-f16.bin")?
+            } else if buf.strip_prefix('2').is_some() {
+                std::fs::File::open("weight/qwen7b-ggml-q4_0.bin")?
+            } else if buf.strip_prefix('6').is_some() {
+                std::fs::File::open("weight/qwen7b-ggml-q5_0.bin")?
+            } else {
+                std::fs::File::open("weight/qwen7b-ggml-q8_0.bin")?
+            };
             let model = ggml_file::Content::read(&mut file)?;
-            let mut total_size_in_bytes = 0;
-            for (_, tensor) in model.tensors.iter() {
-                let elem_count = tensor.shape().elem_count();
-                total_size_in_bytes +=
-                    elem_count * tensor.dtype().type_size() / tensor.dtype().blck_size();
-            }
             println!("params: {:?}", model.hparams);
             ModelWeights::from_ggml(model, 1)?
         };
         chat(&mut qwen)?;
     }
 
-    Ok(())
-}
-
-#[test]
-fn quantized_main() -> Result<(), Error> {
-    use std::io::Read;
-    let mut file = std::fs::File::open("weight/qwen7b-ggml-q4_0.bin")?;
-    let mut file1 = std::fs::File::open("weight/temp.bin")?;
-    for _ in 0..20 {
-        let mut buf = [0u8; 4];
-        let mut buf1 = [0u8; 4];
-        file.read_exact(&mut buf)?;
-        file1.read_exact(&mut buf1)?;
-        println!("{:?}\n{:?}", buf, buf1)
-    }
-    let _ = {
-        let mut file = std::fs::File::open("weight/qwen7b-ggml-q4_0.bin")?;
-        //let mut file = std::fs::File::open("weight/temp.bin")?;
-        let model = ggml_file::Content::read(&mut file)?;
-        let mut total_size_in_bytes = 0;
-        for (_, tensor) in model.tensors.iter() {
-            let elem_count = tensor.shape().elem_count();
-            total_size_in_bytes +=
-                elem_count * tensor.dtype().type_size() / tensor.dtype().blck_size();
-        }
-        println!("params: {:?}", model.hparams);
-        ModelWeights::from_ggml(model, 1)?
-    };
-    
     Ok(())
 }
