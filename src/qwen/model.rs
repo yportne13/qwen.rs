@@ -1,11 +1,13 @@
 use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{Embedding, Module, VarBuilder, Dropout};
+use half::f16;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub const MAX_SEQ_LEN: usize = 8192;
 
 pub struct Config {
+    pub use_int4: bool,
     pub vocab_size: usize,
     pub hidden_size: usize,
     pub num_hidden_layers: usize,
@@ -34,8 +36,9 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn config_7b_v1_1(_use_flash_attn: bool) -> Self {
+    pub fn config_7b_v1_1(_use_flash_attn: bool, use_int4: bool) -> Self {
         Self {
+            use_int4,
             vocab_size: 151936,
             hidden_size: 4096,
             num_hidden_layers: 32,
@@ -147,6 +150,33 @@ fn linear_bias(size1: usize, size2: usize, vb: VarBuilder) -> Result<Linear> {
     Ok(Linear { inner, span })
 }
 
+fn linear_int4(in_dim: usize, out_dim: usize, vs: candle_nn::VarBuilder, bias: bool) -> Result<Linear> {
+    let span = tracing::span!(tracing::Level::TRACE, "linear_int4_bias");
+    let init_ws = candle_nn::init::DEFAULT_KAIMING_NORMAL;
+    let group = 128;
+    let qzeros = vs.get((in_dim/group, out_dim/8), "qzeros")?.to_dtype(DType::U32)?;
+    let qweight = vs.get((in_dim/8, out_dim), "qweight")?.to_dtype(DType::U32)?;
+    let scales = vs.get((in_dim/group, out_dim), "scales")?.to_dtype(DType::F16)?;
+    println!("{}", vs.prefix());
+    //println!("{}", qzeros);
+    println!("{}", qweight);
+    println!("{}", scales);
+    panic!();
+    let ws = vec![f16::from_bits(0); in_dim*out_dim];//Tensor::zeros((in_dim, out_dim), DType::F16, &Device::Cpu)?;//TODO:
+    let ws = Tensor::from_vec(ws, (out_dim, in_dim), &Device::Cpu)?;
+    let bound = 1. / (in_dim as f64).sqrt();
+    let init_bs = candle_nn::Init::Uniform {
+        lo: -bound,
+        up: bound,
+    };
+    if bias {
+        let bs = vs.get_with_hints(out_dim, "bias", init_bs)?;
+        Ok(Linear { inner: candle_nn::Linear::new(ws, Some(bs)), span })
+    } else {
+        Ok(Linear { inner: candle_nn::Linear::new(ws, None), span })
+    }
+}
+
 struct RmsNorm {
     inner: candle_nn::RmsNorm,
     span: tracing::Span,
@@ -223,6 +253,7 @@ impl CausalSelfAttention {
         let mut v = qkv[2]
             .reshape((b_sz, seq_len, self.num_key_value_heads, self.head_dim))?
             .transpose(1, 2)?;
+        //TODO: to_dtype(F32) beforee rotary?
 
         let q = self.apply_rotary_emb(&q, index_pos)?;
         let mut k = self.apply_rotary_emb(&k, index_pos)?;
@@ -292,16 +323,34 @@ impl CausalSelfAttention {
     fn load(vb: VarBuilder, cache: &Cache, cfg: &Config) -> Result<Self> {
         let span = tracing::span!(tracing::Level::TRACE, "attn");
         let span_rot = tracing::span!(tracing::Level::TRACE, "attn-rot");
-        let c_attn = linear_bias(
-            cfg.hidden_size,
-            3 * cfg.kv_channels * cfg.num_attention_heads,
-            vb.pp("c_attn")
-        )?;
-        let c_proj = linear(
-            cfg.hidden_size,
-            cfg.kv_channels * cfg.num_attention_heads,
-            vb.pp("c_proj")
-        )?;//TODO:!cfg.no_bias
+        let c_attn = if cfg.use_int4 {
+            linear_int4(
+                cfg.hidden_size,
+                3 * cfg.kv_channels * cfg.num_attention_heads,
+                vb.pp("c_attn"),
+                true
+            )?
+        } else {
+            linear_bias(
+                cfg.hidden_size,
+                3 * cfg.kv_channels * cfg.num_attention_heads,
+                vb.pp("c_attn")
+            )?
+        };
+        let c_proj = if cfg.use_int4 {
+            linear_int4(
+                cfg.hidden_size,
+                cfg.kv_channels * cfg.num_attention_heads,
+                vb.pp("c_proj"),
+                false
+            )?//TODO:!cfg.no_bias
+        } else {
+            linear(
+                cfg.hidden_size,
+                cfg.kv_channels * cfg.num_attention_heads,
+                vb.pp("c_proj")
+            )?//TODO:!cfg.no_bias
+        };
         Ok(Self {
             c_attn,
             c_proj,
@@ -341,9 +390,21 @@ impl QwenMlp {
         let span = tracing::span!(tracing::Level::TRACE, "mlp");
         let h_size = cfg.hidden_size;
         let i_size = cfg.intermediate_size/2;
-        let c_w1 = linear(h_size, i_size, vb.pp("w1"))?;//TODO:!cfg.no_bias
-        let c_w2 = linear(h_size, i_size, vb.pp("w2"))?;//TODO:!cfg.no_bias
-        let c_proj = linear(i_size, h_size, vb.pp("c_proj"))?;//TODO:!cfg.no_bias
+        let c_w1 = if cfg.use_int4 {
+            linear_int4(h_size, i_size, vb.pp("w1"), false)?//TODO:!cfg.no_bias
+        } else {
+            linear(h_size, i_size, vb.pp("w1"))?//TODO:!cfg.no_bias
+        };
+        let c_w2 = if cfg.use_int4 {
+            linear_int4(h_size, i_size, vb.pp("w2"), false)?//TODO:!cfg.no_bias
+        } else {
+            linear(h_size, i_size, vb.pp("w2"))?//TODO:!cfg.no_bias
+        };
+        let c_proj = if cfg.use_int4 {
+            linear_int4(i_size, h_size, vb.pp("c_proj"), false)?//TODO:!cfg.no_bias
+        } else {
+            linear(i_size, h_size, vb.pp("c_proj"))?//TODO:!cfg.no_bias
+        };
         Ok(Self {
             c_w1,
             c_w2,
