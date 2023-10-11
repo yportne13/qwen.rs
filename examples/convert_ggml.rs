@@ -95,22 +95,42 @@ fn main() -> Result<(), Error> {
                 .to_dtype(candle_core::DType::F16)?;//: Vec<Vec<half::f16>>
                 //.to_vec2()?;
             use candle_core::quantized::GgmlType;
-            type T = candle_core::quantized::k_quants::BlockQ5_0;
             let src = tensor
                 .to_dtype(candle_core::DType::F32)?
                 .flatten_all()?
                 .to_vec1::<f32>()?;
-            let mut data = vec![T::zeros(); src.len() / T::BLCK_SIZE];
-            T::from_float(&src, &mut data)?;
             unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
                 ::core::slice::from_raw_parts(
                     (p as *const T) as *const u8,
                     ::core::mem::size_of::<T>(),
                 )
             }
-            let to_write = data.into_iter()
-                .flat_map(|x| unsafe{any_as_u8_slice(&x)}.to_vec())
-                .collect::<Vec<_>>();
+            let to_write = match dtype {
+                2 => {
+                    type T = candle_core::quantized::k_quants::BlockQ4_0;
+                    let mut data = vec![T::zeros(); src.len() / T::BLCK_SIZE];
+                    T::from_float(&src, &mut data)?;
+                    data.clone().into_iter()
+                        .flat_map(|x| unsafe{any_as_u8_slice(&x)}.to_vec())
+                        .collect::<Vec<_>>()
+                },
+                6 => {
+                    type T = candle_core::quantized::k_quants::BlockQ5_0;
+                    let mut data = vec![T::zeros(); src.len() / T::BLCK_SIZE];
+                    T::from_float(&src, &mut data)?;
+                    data.clone().into_iter()
+                        .flat_map(|x| unsafe{any_as_u8_slice(&x)}.to_vec())
+                        .collect::<Vec<_>>()
+                },
+                _ => {
+                    type T = candle_core::quantized::k_quants::BlockQ8_0;
+                    let mut data = vec![T::zeros(); src.len() / T::BLCK_SIZE];
+                    T::from_float(&src, &mut data)?;
+                    data.clone().into_iter()
+                        .flat_map(|x| unsafe{any_as_u8_slice(&x)}.to_vec())
+                        .collect::<Vec<_>>()
+                },
+            };
             file.write_all(&to_write)?;
         }        
         Ok(())
