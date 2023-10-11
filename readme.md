@@ -2,7 +2,7 @@
 
 一个非官方的使用 rust 实现的[通义千问-7B-chat](https://github.com/QwenLM/Qwen)，能够在 cpu 上运行，不需要任何依赖。基于 [candle](https://github.com/huggingface/candle) 和 [tiktoken-rs](https://github.com/zurawiki/tiktoken-rs)，大量参考了 candle 中的 llama 的例子。
 
-实现了一个原始版本和一个量化版本（目前量化版本还未调通，基于 ggml，官方的转换脚本似乎是早期版本，candle 不支持）。原始版本需要下载官方的权重文件（[Hugging Face](https://huggingface.co/Qwen/Qwen-7B-Chat/tree/main) 或 [ModelScope](https://modelscope.cn/models/qwen/Qwen-7B-Chat/files)）下的八个后缀为 `.safetensors` 的文件。量化版本需要下载的权重文件还在调。
+实现了一个原始版本和一个量化版本（基于 ggml，但并不是标准的文件。基本按照 ggmlv3，未处理 align）。原始版本需要下载官方的权重文件（[Hugging Face](https://huggingface.co/Qwen/Qwen-7B-Chat/tree/main) 或 [ModelScope](https://modelscope.cn/models/qwen/Qwen-7B-Chat/files)）下的八个后缀为 `.safetensors` 的文件。量化版本所需的权重文件可以使用 [release](https://github.com/yportne13/qwen.rs/releases/tag/v1-26f5754) 页面下的 convert_ggml 程序来将原始权重文件转为 ggml 格式的文件。
 
 ## 使用方法
 
