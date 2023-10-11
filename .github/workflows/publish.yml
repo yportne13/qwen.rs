@@ -54,7 +54,9 @@ jobs:
     steps:          
     - uses: actions/checkout@v3
     - name: Build
-      run: cargo build --release
+      run: |
+        cargo build --release
+        cargo build --release --example convert_ggml
 
     - name: macos-latest
       if: matrix.platform == 'macos-latest'
@@ -68,8 +70,12 @@ jobs:
         name: qwen-rs
         path: |
           target\release\*.exe
+          target\release\examples\*.exe
           target/release/qwen-rs
-          target/aarch64-apple-darwin/release/qwen-rs
+          target/release/examples/convert_ggml
+          target/release/qwen_rs
+          target/aarch64-apple-darwin/release/qwen_rs
+          target/aarch64-apple-darwin/release/examples/convert_ggml
 
     - name: Upload release assets windows
       if: matrix.platform == 'windows-latest'
@@ -80,6 +86,17 @@ jobs:
         upload_url: ${{ needs.release.outputs.upload_url }}
         asset_path: target\release\qwen-rs.exe
         asset_name: qwen-rs.exe
+        asset_content_type: application/vnd.microsoft.portable-executable
+
+    - name: Upload convert ggml windows
+      if: matrix.platform == 'windows-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target\release\examples\convert_ggml.exe
+        asset_name: convert_ggml.exe
         asset_content_type: application/vnd.microsoft.portable-executable
 
     - name: Upload release assets linux
@@ -93,6 +110,17 @@ jobs:
         asset_name: qwen-rs_ubuntu
         asset_content_type: application/octet-stream
 
+    - name: Upload convert ggml linux
+      if: matrix.platform == 'ubuntu-20.04'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target/release/examples/convert_ggml
+        asset_name: convert_ggml_ubuntu
+        asset_content_type: application/octet-stream
+
     - name: Upload release assets mac
       if: matrix.platform == 'macos-latest'
       uses: actions/upload-release-asset@v1
@@ -100,8 +128,19 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload_url }}
-        asset_path: target/release/qwen-rs
-        asset_name: qwen-rs_mac
+        asset_path: target/release/qwen_rs
+        asset_name: qwen_rs_mac
+        asset_content_type: application/octet-stream
+
+    - name: Upload convert ggml mac
+      if: matrix.platform == 'macos-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target/release/examples/convert_ggml
+        asset_name: convert_ggml_mac
         asset_content_type: application/octet-stream
 
     - name: Upload release assets mac_aarch64
@@ -111,6 +150,17 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload_url }}
-        asset_path: target/aarch64-apple-darwin/release/qwen-rs
+        asset_path: target/aarch64-apple-darwin/release/qwen_rs
         asset_name: qwen-rs_mac_aarch64
+        asset_content_type: application/octet-stream
+
+    - name: Upload convert ggml mac_aarch64
+      if: matrix.platform == 'macos-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target/aarch64-apple-darwin/release/examples/convert_ggml
+        asset_name: convert_ggml_mac_aarch64
         asset_content_type: application/octet-stream

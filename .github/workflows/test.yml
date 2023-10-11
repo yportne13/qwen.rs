@@ -20,7 +20,9 @@ jobs:
     steps:          
     - uses: actions/checkout@v3
     - name: Build
-      run: cargo build --release
+      run: |
+        cargo build --release
+        cargo build --release --example convert_ggml
 
     - name: macos-latest
       if: matrix.platform == 'macos-latest'
@@ -34,5 +36,9 @@ jobs:
         name: qwen-rs
         path: |
           target\release\*.exe
+          target\release\examples\*.exe
           target/release/qwen-rs
-          target/aarch64-apple-darwin/release/qwen-rs
+          target/release/examples/convert_ggml
+          target/release/qwen_rs
+          target/aarch64-apple-darwin/release/qwen_rs
+          target/aarch64-apple-darwin/release/examples/convert_ggml
