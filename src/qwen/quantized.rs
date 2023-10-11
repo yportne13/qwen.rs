@@ -6,6 +6,7 @@ use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
 use candle_nn::{Embedding, Module};
 
 pub const MAX_SEQ_LEN: usize = 8192;
+pub const WINDOW: usize = 1024;
 
 struct RmsNorm {
     inner: candle_nn::LayerNorm,
@@ -116,8 +117,26 @@ impl LayerWeights {
                 if index_pos == 0 {
                     (k, v)
                 } else {
-                    let k = Tensor::cat(&[k_cache, &k], 2)?.contiguous()?;
-                    let v = Tensor::cat(&[v_cache, &v], 2)?.contiguous()?;
+                    let k_len = k_cache.dims()[2];
+                    let k = if k_len <= WINDOW {
+                        Tensor::cat(&[k_cache, &k], 2)?.contiguous()?
+                    } else {
+                        let cache = Tensor::cat(&[
+                            k_cache.i((.., .., ..4))?,
+                            k_cache.i((.., .., k_len - WINDOW + 4..))?,
+                        ], 2)?;
+                        Tensor::cat(&[&cache, &k], 2)?.contiguous()?
+                    };
+                    let v_len = v_cache.dims()[2];
+                    let v = if v_len <= WINDOW {
+                        Tensor::cat(&[v_cache, &v], 2)?.contiguous()?
+                    } else {
+                        let cache = Tensor::cat(&[
+                            v_cache.i((.., .., ..4))?,
+                            v_cache.i((.., .., v_len - WINDOW + 4..))?,
+                        ], 2)?;
+                        Tensor::cat(&[&cache, &v], 2)?.contiguous()?
+                    };
                     (k, v)
                 }
             }
@@ -330,7 +349,7 @@ impl ModelWeights {
 
     pub fn forward(&mut self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
         let (_b_sz, seq_len) = x.dims2()?;
-        let mask = self.mask(seq_len, seq_len + index_pos)?;
+        let mask = self.mask(seq_len, seq_len + if index_pos < WINDOW {index_pos} else {WINDOW})?;
         let _enter = self.span.enter();
         let mut layer_in = self.wte.forward(x)?;
         for layer in self.layers.iter_mut() {
