@@ -57,6 +57,7 @@ jobs:
       run: |
         cargo build --release
         cargo build --release --example convert_ggml
+        cargo build --release --example convert_ggml_int4
 
     - name: macos-latest
       if: matrix.platform == 'macos-latest'
@@ -73,9 +74,25 @@ jobs:
           target\release\examples\*.exe
           target/release/qwen-rs
           target/release/examples/convert_ggml
+          target/release/examples/convert_ggml_int4
           target/release/qwen_rs
           target/aarch64-apple-darwin/release/qwen_rs
           target/aarch64-apple-darwin/release/examples/convert_ggml
+          target/aarch64-apple-darwin/release/examples/convert_ggml_int4
+
+    - name: macos-latest
+      if: matrix.platform == 'macos-latest'
+      uses: actions/upload-artifact@v3
+      with:
+        name: qwen-rs-macos
+        path: |
+          target/release/qwen-rs
+          target/release/examples/convert_ggml
+          target/release/examples/convert_ggml_int4
+          target/release/qwen_rs
+          target/aarch64_apple_darwin/release/qwen_rs
+          target/aarch64_apple_darwin/release/examples/convert_ggml
+          target/aarch64_apple_darwin/release/examples/convert_ggml_int4
 
     - name: Upload release assets windows
       if: matrix.platform == 'windows-latest'
@@ -99,6 +116,17 @@ jobs:
         asset_name: convert_ggml.exe
         asset_content_type: application/vnd.microsoft.portable-executable
 
+    - name: Upload convert ggml int4 windows
+      if: matrix.platform == 'windows-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target\release\examples\convert_ggml_int4.exe
+        asset_name: convert_ggml_int4.exe
+        asset_content_type: application/vnd.microsoft.portable-executable
+
     - name: Upload release assets linux
       if: matrix.platform == 'ubuntu-20.04'
       uses: actions/upload-release-asset@v1
@@ -119,6 +147,17 @@ jobs:
         upload_url: ${{ needs.release.outputs.upload_url }}
         asset_path: target/release/examples/convert_ggml
         asset_name: convert_ggml_ubuntu
+        asset_content_type: application/octet-stream
+
+    - name: Upload convert ggml int4 linux
+      if: matrix.platform == 'ubuntu-20.04'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target/release/examples/convert_ggml_int4
+        asset_name: convert_ggml_int4_ubuntu
         asset_content_type: application/octet-stream
 
     - name: Upload release assets mac
