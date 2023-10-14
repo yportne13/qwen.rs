@@ -52,7 +52,7 @@ fn main() -> Result<(), Error> {
     println!("{}", scales.i((..4, 0))?);
     panic!();*/
 
-    let mut ggml = std::fs::File::create("qwen-7b-ggml.bin")?;
+    let mut ggml = std::fs::File::create("weight/qwen7b-ggml-q4_0.bin")?;
     //ggml.write_all(b"tjgg")?;
     //ggml.write_all(&[3, 0, 0, 0])?;
     ggml.write_all(b"lmgg")?;
@@ -170,7 +170,7 @@ fn main() -> Result<(), Error> {
     write_2dim(&vb, &mut ggml, (151936, 4096), "lm_head.weight")?;
     
     ///////
-    let mut ggml = std::fs::File::open("qwen-7b-ggml.bin")?;
+    let mut ggml = std::fs::File::open("weight/qwen7b-ggml-q4_0.bin")?;
     let model = ggml_file::Content::read(&mut ggml)?;
     println!("params: {:?}", model.hparams);
     for t in model.tensors.iter() {
