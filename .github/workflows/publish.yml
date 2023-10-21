@@ -63,7 +63,13 @@ jobs:
       if: matrix.platform == 'macos-latest'
       uses: actions/checkout@v3
       with:
-        run: cargo build --release --target=aarch64-apple-darwin
+        run: |
+          cargo build --release --bin qwen_rs_mac
+          cargo build --release --bin convert_ggml_mac --example convert_ggml
+          cargo build --release --bin convert_ggml_mac_int4 --example convert_ggml_int4
+          cargo build --release --bin qwen_rs_mac_arm --target=aarch64-apple-darwin
+          cargo build --release --bin convert_ggml_mac_arm --example convert_ggml --target=aarch64-apple-darwin
+          cargo build --release --bin convert_ggml_mac_arm_int4 --example convert_ggml_int4 --target=aarch64-apple-darwin
 
     - name: Upload exe file
       uses: actions/upload-artifact@v3
@@ -75,10 +81,12 @@ jobs:
           target/release/qwen-rs
           target/release/examples/convert_ggml
           target/release/examples/convert_ggml_int4
-          target/release/qwen_rs
-          target/aarch64-apple-darwin/release/qwen_rs
-          target/aarch64-apple-darwin/release/examples/convert_ggml
-          target/aarch64-apple-darwin/release/examples/convert_ggml_int4
+          target/release/qwen_rs_mac
+          target/release/examples/convert_ggml_mac
+          target/release/examples/convert_ggml_mac_int4
+          target/aarch64-apple-darwin/release/qwen_rs_mac_arm
+          target/aarch64-apple-darwin/release/examples/convert_ggml_mac_arm
+          target/aarch64-apple-darwin/release/examples/convert_ggml_mac_arm_int4
 
     - name: macos-latest
       if: matrix.platform == 'macos-latest'
@@ -167,7 +175,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload_url }}
-        asset_path: target/release/qwen_rs
+        asset_path: target/release/qwen_rs_mac
         asset_name: qwen_rs_mac
         asset_content_type: application/octet-stream
 
@@ -178,8 +186,19 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload_url }}
-        asset_path: target/release/examples/convert_ggml
+        asset_path: target/release/examples/convert_ggml_mac
         asset_name: convert_ggml_mac
+        asset_content_type: application/octet-stream
+
+    - name: Upload convert ggml int4 mac
+      if: matrix.platform == 'macos-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target/release/examples/convert_ggml_mac_int4
+        asset_name: convert_ggml_mac_int4
         asset_content_type: application/octet-stream
 
     - name: Upload release assets mac_aarch64
@@ -189,7 +208,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload_url }}
-        asset_path: target/aarch64-apple-darwin/release/qwen_rs
+        asset_path: target/aarch64-apple-darwin/release/qwen_rs_mac_arm
         asset_name: qwen-rs_mac_aarch64
         asset_content_type: application/octet-stream
 
@@ -200,6 +219,17 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.release.outputs.upload_url }}
-        asset_path: target/aarch64-apple-darwin/release/examples/convert_ggml
+        asset_path: target/aarch64-apple-darwin/release/examples/convert_ggml_mac_arm
         asset_name: convert_ggml_mac_aarch64
+        asset_content_type: application/octet-stream
+
+    - name: Upload convert ggml int4 mac_aarch64
+      if: matrix.platform == 'macos-latest'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: target/aarch64-apple-darwin/release/examples/convert_ggml_mac_arm_int4
+        asset_name: convert_ggml_mac_aarch64_int4
         asset_content_type: application/octet-stream

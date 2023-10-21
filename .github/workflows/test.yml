@@ -30,9 +30,12 @@ jobs:
       uses: actions/checkout@v3
       with:
         run: |
-          cargo build --release --target=aarch64-apple-darwin
-          cargo build --release --example convert_ggml --target=aarch64-apple-darwin
-          cargo build --release --example convert_ggml_int4 --target=aarch64-apple-darwin
+          cargo build --release --bin qwen_rs_mac
+          cargo build --release --bin convert_ggml_mac --example convert_ggml
+          cargo build --release --bin convert_ggml_mac_int4 --example convert_ggml_int4
+          cargo build --release --bin qwen_rs_mac_arm --target=aarch64-apple-darwin
+          cargo build --release --bin convert_ggml_mac_arm --example convert_ggml --target=aarch64-apple-darwin
+          cargo build --release --bin convert_ggml_mac_arm_int4 --example convert_ggml_int4 --target=aarch64-apple-darwin
 
     - name: Upload exe file
       uses: actions/upload-artifact@v3
@@ -44,10 +47,12 @@ jobs:
           target/release/qwen-rs
           target/release/examples/convert_ggml
           target/release/examples/convert_ggml_int4
-          target/release/qwen_rs
-          target/aarch64-apple-darwin/release/qwen_rs
-          target/aarch64-apple-darwin/release/examples/convert_ggml
-          target/aarch64-apple-darwin/release/examples/convert_ggml_int4
+          target/release/qwen_rs_mac
+          target/release/examples/convert_ggml_mac
+          target/release/examples/convert_ggml_mac_int4
+          target/aarch64-apple-darwin/release/qwen_rs_mac_arm
+          target/aarch64-apple-darwin/release/examples/convert_ggml_mac_arm
+          target/aarch64-apple-darwin/release/examples/convert_ggml_mac_arm_int4
 
     - name: macos-latest
       if: matrix.platform == 'macos-latest'
